@@ -372,7 +372,7 @@ scene.add(ledDot);
 
 // ── CEILING-SUSPENDED PROJECTOR ───────────────────────────────────────────────
 var PJX = 0.0, PJZ = 0.0;      // centred above vessel
-var DROP_LEN  = 0.55;            // how far it hangs below ceiling
+var DROP_LEN  = 2.72;            // hangs close to camera/ring
 var PROJ_BODY_Y = RH - DROP_LEN - 0.05;
 
 // Ceiling mount plate
@@ -470,19 +470,26 @@ for (var wi=0; wi<6; wi++) {
 var bagCols  = [0x1a1828, 0x201418, 0x14201c, 0x1e1c14, 0x181428, 0x201c18];
 var cushCols = [0x2a2038, 0x28201a, 0x1e2830, 0x242018, 0x20283a, 0x302020];
 
+// Drag state
+var _dragTargets = [];   // meshes to raycast
+var _dragRoot    = null; // group/mesh being dragged
+var _dragRay     = new THREE.Raycaster();
+var _dragMouse   = new THREE.Vector2();
+var _floorPlane  = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+var _dragHit     = new THREE.Vector3();
+var _dragOff     = new THREE.Vector3();
+
 function makeBeanBag(x, z, col) {
   var g = new THREE.Group();
   g.position.set(x, 0, z);
   scene.add(g);
 
-  // Base shadow disc (ground contact)
   var disc = new THREE.Mesh(
     new THREE.CylinderGeometry(0.42, 0.40, 0.04, 24),
     mkMat(0x0e0c0a, 0.98)
   );
   disc.position.y = 0.02; g.add(disc);
 
-  // Main bean bag body — squashed sphere
   var body = new THREE.Mesh(
     new THREE.SphereGeometry(0.40, 20, 14),
     mkMat(col, 0.96)
@@ -490,13 +497,15 @@ function makeBeanBag(x, z, col) {
   body.scale.set(1.0, 0.62, 1.0);
   body.position.y = 0.28; g.add(body);
 
-  // Top seam crease (slightly darker flattened cap)
   var top = new THREE.Mesh(
     new THREE.SphereGeometry(0.18, 16, 8),
     mkMat(Math.max(0, col - 0x080808), 0.97)
   );
   top.scale.set(1.0, 0.35, 1.0);
   top.position.y = 0.50; g.add(top);
+
+  // Register all children as drag handles
+  g.children.forEach(function(child) { child.userData.dragRoot = g; _dragTargets.push(child); });
 }
 
 function makeFloorCushion(x, z, ry, col) {
@@ -506,7 +515,9 @@ function makeFloorCushion(x, z, ry, col) {
   );
   c.position.set(x, 0.045, z);
   c.rotation.y = ry;
+  c.userData.dragRoot = c;
   scene.add(c);
+  _dragTargets.push(c);
 }
 
 // Inner ring — 12 bean bags at radius 2.0m
@@ -617,6 +628,41 @@ fP.open();
 
 // ── ANIMATE ───────────────────────────────────────────────────────────────────
 var clock = new THREE.Clock();
+
+// ── DRAG TO REARRANGE cushions & bean bags ────────────────────────────────────
+renderer.domElement.addEventListener('pointerdown', function(e) {
+  _dragMouse.x = (e.clientX/innerWidth)*2 - 1;
+  _dragMouse.y = -(e.clientY/innerHeight)*2 + 1;
+  _dragRay.setFromCamera(_dragMouse, camera);
+  var hits = _dragRay.intersectObjects(_dragTargets, false);
+  if (hits.length > 0) {
+    _dragRoot = hits[0].object.userData.dragRoot;
+    controls.enabled = false;
+    _dragRay.ray.intersectPlane(_floorPlane, _dragHit);
+    _dragOff.set(_dragHit.x - _dragRoot.position.x, 0, _dragHit.z - _dragRoot.position.z);
+  }
+});
+
+renderer.domElement.addEventListener('pointermove', function(e) {
+  if (!_dragRoot) return;
+  _dragMouse.x = (e.clientX/innerWidth)*2 - 1;
+  _dragMouse.y = -(e.clientY/innerHeight)*2 + 1;
+  _dragRay.setFromCamera(_dragMouse, camera);
+  if (_dragRay.ray.intersectPlane(_floorPlane, _dragHit)) {
+    var nx = _dragHit.x - _dragOff.x;
+    var nz = _dragHit.z - _dragOff.z;
+    // Constrain inside room
+    var d = Math.sqrt(nx*nx + nz*nz);
+    if (d > ROOM_R - 0.55) { nx *= (ROOM_R-0.55)/d; nz *= (ROOM_R-0.55)/d; }
+    _dragRoot.position.x = nx;
+    _dragRoot.position.z = nz;
+  }
+});
+
+renderer.domElement.addEventListener('pointerup', function() {
+  _dragRoot = null;
+  controls.enabled = true;
+});
 
 function animate() {
   requestAnimationFrame(animate);
