@@ -203,6 +203,24 @@ var baseTrim = new THREE.Mesh(
 baseTrim.position.y = 0.03;
 scene.add(baseTrim);
 
+// ── SATIN CURTAINS ────────────────────────────────────────────────────────────
+var satinMat = new THREE.MeshStandardMaterial({
+  color: 0x07070d,
+  roughness: 0.13,
+  metalness: 0.24,
+  side: THREE.DoubleSide,
+});
+var N_PANELS = 72;
+var foldDepths = [0.04, 0.20, 0.11, 0.17, 0.06, 0.14]; // gathered fold variation
+for (var pi = 0; pi < N_PANELS; pi++) {
+  var pa  = (pi / N_PANELS) * Math.PI * 2;
+  var pr  = ROOM_R - 0.02 - foldDepths[pi % foldDepths.length];
+  var pnl = new THREE.Mesh(new THREE.PlaneGeometry(0.70, RH), satinMat);
+  pnl.position.set(Math.cos(pa)*pr, RH/2, Math.sin(pa)*pr);
+  pnl.lookAt(new THREE.Vector3(0, RH/2, 0));
+  scene.add(pnl);
+}
+
 // ── CYMATICS VESSEL (small, elegant focal object) ─────────────────────────────
 var VR = 0.325;
 var VH = 0.17;
@@ -280,99 +298,138 @@ ceilProj.rotation.x = Math.PI/2;
 ceilProj.position.y = RH-0.005;
 scene.add(ceilProj);
 
-// ── CAMERA / PROJECTOR RIG ────────────────────────────────────────────────────
-var RING_Y = PLATE_Y + 0.52;
-var CAM_Y  = PLATE_Y + 0.90;
-var PROJ_Y = CAM_Y + 0.20;
-var BEAM_Y = PROJ_Y + 0.11;
+// ── RING OF LIGHT around vessel ───────────────────────────────────────────────
+var PLATE_Y = VH + 0.020;
+var RING_R  = 0.22;
+var RING_Y  = PLATE_Y + 0.06;
 
 var rigMat  = mkMat(0x0d0d0d, 0.28, 0.78);
 var lensMat = mkMat(0x050508, 0.04, 0.96);
 
-// Pedestal
-var pedH = PROJ_Y + 0.10 - PLATE_Y;
-var ped = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.032, pedH, 12), rigMat);
-ped.position.y = PLATE_Y + pedH/2; scene.add(ped);
-
-var pedFoot = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.012, 24), rigMat);
-pedFoot.position.y = PLATE_Y+0.006; scene.add(pedFoot);
-
-// Ring of light
-var RING_R = 0.26;
 var ringGlow = new THREE.Mesh(
-  new THREE.TorusGeometry(RING_R, 0.017, 12, 80),
+  new THREE.TorusGeometry(RING_R, 0.014, 12, 80),
   new THREE.MeshBasicMaterial({ color: 0xdcf0ff })
 );
 ringGlow.rotation.x = Math.PI/2; ringGlow.position.y = RING_Y; scene.add(ringGlow);
 
-// Ring inner glow disc
-var ringDisc = new THREE.Mesh(
-  new THREE.CircleGeometry(RING_R*0.85, 64),
-  new THREE.MeshBasicMaterial({ color: 0x0a1840, transparent:true, opacity:0.3, side:THREE.DoubleSide })
-);
-ringDisc.rotation.x = Math.PI/2; ringDisc.position.y = RING_Y+0.001; scene.add(ringDisc);
+// ── CAMERA TRIPOD (beside vessel, pointing down at plate) ─────────────────────
+var TPX = 0.80, TPZ = 0.30;   // tripod base position
+var TRIPOD_H = 1.28;           // camera head height
 
-// Spokes
-for (var si=0; si<3; si++) {
-  var sa = (si/3)*Math.PI*2;
-  var spk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.003, 0.003, RING_R-0.02, 6),
-    rigMat
+// Centre pole
+var tpole = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.009, 0.011, TRIPOD_H, 8), rigMat
+);
+tpole.position.set(TPX, TRIPOD_H/2, TPZ);
+scene.add(tpole);
+
+// Three legs spreading outward-downward
+var yUp = new THREE.Vector3(0, 1, 0);
+for (var tli=0; tli<3; tli++) {
+  var tla = (tli/3)*Math.PI*2 + Math.PI/6;
+  var footX = TPX + Math.cos(tla)*0.38;
+  var footZ = TPZ + Math.sin(tla)*0.38;
+  var jointH = 0.18;
+  var legVec = new THREE.Vector3(footX-TPX, -jointH, footZ-TPZ);
+  var legLen = legVec.length();
+  legVec.normalize();
+  var legQ = new THREE.Quaternion().setFromUnitVectors(yUp, legVec);
+  var leg = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.006, 0.007, legLen, 8), rigMat
   );
-  spk.position.set(Math.cos(sa)*(RING_R*0.5), RING_Y, Math.sin(sa)*(RING_R*0.5));
-  spk.rotation.z = Math.PI/2;
-  spk.rotation.y = sa;
-  scene.add(spk);
+  leg.position.set(TPX+(footX-TPX)*0.5, jointH*0.5, TPZ+(footZ-TPZ)*0.5);
+  leg.setRotationFromQuaternion(legQ);
+  scene.add(leg);
+
+  // Rubber foot
+  var foot = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.018, 8), mkMat(0x080808, 0.95));
+  foot.position.set(footX, 0.009, footZ);
+  scene.add(foot);
 }
 
-// Camera housing (down-facing)
-var camBody = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.08, 0.14), rigMat);
-camBody.position.y = CAM_Y; scene.add(camBody);
+// Pan-tilt head
+var panHead = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 0.07), rigMat);
+panHead.position.set(TPX, TRIPOD_H+0.025, TPZ);
+scene.add(panHead);
 
-var camLens = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, 0.052, 16), lensMat);
-camLens.position.y = CAM_Y-0.060; scene.add(camLens);
+// Camera body on head, tilted toward vessel
+var camBody = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.13), rigMat);
+camBody.position.set(TPX, TRIPOD_H+0.075, TPZ);
+// Tilt camera down toward vessel center
+var tiltAngle = Math.atan2(TRIPOD_H, Math.sqrt(TPX*TPX+TPZ*TPZ));
+camBody.rotation.z = tiltAngle * 0.65;
+camBody.rotation.y = -Math.atan2(TPZ, TPX) + Math.PI;
+scene.add(camBody);
 
-var camGlass = new THREE.Mesh(
-  new THREE.CircleGeometry(0.019, 16),
-  new THREE.MeshStandardMaterial({ color:0x102030, metalness:1.0, roughness:0.0 })
-);
-camGlass.rotation.x = -Math.PI/2; camGlass.position.y = CAM_Y-0.084; scene.add(camGlass);
+// Camera lens barrel
+var camLens = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.025, 0.048, 16), lensMat);
+camLens.position.set(TPX - 0.055, TRIPOD_H+0.060, TPZ);
+camLens.rotation.z = Math.PI/2;
+scene.add(camLens);
 
+// Red LED indicator
 var ledDot = new THREE.Mesh(
   new THREE.SphereGeometry(0.007, 8, 6),
   new THREE.MeshBasicMaterial({ color:0xff3300 })
 );
-ledDot.position.set(0.04, CAM_Y+0.042, 0.055); scene.add(ledDot);
+ledDot.position.set(TPX+0.03, TRIPOD_H+0.110, TPZ+0.05);
+scene.add(ledDot);
 
-// Short cable
-var cable = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.004, 0.004, 0.18, 6),
-  mkMat(0x080808, 0.92)
+// ── CEILING-SUSPENDED PROJECTOR ───────────────────────────────────────────────
+var PJX = 0.0, PJZ = 0.0;      // centred above vessel
+var DROP_LEN  = 0.55;            // how far it hangs below ceiling
+var PROJ_BODY_Y = RH - DROP_LEN - 0.05;
+
+// Ceiling mount plate
+var ceilMount = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.18), rigMat);
+ceilMount.position.set(PJX, RH-0.02, PJZ);
+scene.add(ceilMount);
+
+// Drop rod
+var dropRod = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.012, 0.012, DROP_LEN, 8), rigMat
 );
-cable.position.set(0.05, (CAM_Y+PROJ_Y)*0.5, 0.06);
-cable.rotation.z = 0.28;
-scene.add(cable);
+dropRod.position.set(PJX, RH - DROP_LEN/2, PJZ);
+scene.add(dropRod);
 
-// Projector housing (up-facing)
-var projBody = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.09, 0.21), rigMat);
-projBody.position.y = PROJ_Y; scene.add(projBody);
+// Projector body (hanging, lens pointing down toward plate)
+var projBody = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.10, 0.16), rigMat);
+projBody.position.set(PJX, PROJ_BODY_Y, PJZ);
+scene.add(projBody);
 
-var projLens = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 0.046, 16), lensMat);
-projLens.position.y = PROJ_Y+0.07; scene.add(projLens);
+// Projector lens (pointing down)
+var projLens = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.032, 0.048, 16), lensMat);
+projLens.position.set(PJX, PROJ_BODY_Y - 0.074, PJZ);
+scene.add(projLens);
 
+// Lens glow
 var projGlow = new THREE.Mesh(
-  new THREE.CircleGeometry(0.024, 16),
+  new THREE.CircleGeometry(0.022, 16),
   new THREE.MeshBasicMaterial({ color:0x3060ff })
 );
-projGlow.rotation.x = Math.PI/2; projGlow.position.y = PROJ_Y+0.094; scene.add(projGlow);
+projGlow.rotation.x = Math.PI/2;
+projGlow.position.set(PJX, PROJ_BODY_Y - 0.098, PJZ);
+scene.add(projGlow);
 
-// Projection beam
-var beamH = RH - BEAM_Y - 0.03;
-var beamMesh = new THREE.Mesh(
-  new THREE.CylinderGeometry(ROOM_R*0.88, 0.028, beamH, 56, 1, true),
-  new THREE.MeshBasicMaterial({ color:0x1020a0, transparent:true, opacity:0.048, depthWrite:false, side:THREE.BackSide })
+// Cable from camera up to projector
+var cableLen = Math.sqrt(Math.pow(TPX-PJX,2)+Math.pow(TRIPOD_H-PROJ_BODY_Y,2)+Math.pow(TPZ-PJZ,2));
+var cableMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.004, 0.004, cableLen, 6), mkMat(0x080808, 0.92)
 );
-beamMesh.position.y = BEAM_Y + beamH/2;
+var cableMid = new THREE.Vector3((TPX+PJX)/2, (TRIPOD_H+PROJ_BODY_Y)/2, (TPZ+PJZ)/2);
+var cableDir = new THREE.Vector3(PJX-TPX, PROJ_BODY_Y-TRIPOD_H, PJZ-TPZ).normalize();
+var cableQ   = new THREE.Quaternion().setFromUnitVectors(yUp, cableDir);
+cableMesh.position.copy(cableMid);
+cableMesh.setRotationFromQuaternion(cableQ);
+scene.add(cableMesh);
+
+// Projection beam (from projector lens downward to plate — subtle cone)
+var beamH = PROJ_BODY_Y - PLATE_Y - 0.05;
+var beamMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(VR*1.1, 0.024, beamH, 40, 1, true),
+  new THREE.MeshBasicMaterial({ color:0x1828c0, transparent:true, opacity:0.055, depthWrite:false, side:THREE.BackSide })
+);
+beamMesh.position.set(PJX, PLATE_Y + beamH/2, PJZ);
 scene.add(beamMesh);
 
 // ── LIGHTS ────────────────────────────────────────────────────────────────────
@@ -396,10 +453,10 @@ var ringLight = new THREE.PointLight(0xc0dcff, 5.0, 4.2);
 ringLight.position.set(0, RING_Y, 0);
 scene.add(ringLight);
 
-// Projector upward cone
-var projSpot = new THREE.SpotLight(0x1530b0, P.ceilGlow*2.0, RH+1, Math.PI*0.46, 0.92, 0.9);
-projSpot.position.set(0, BEAM_Y, 0);
-projSpot.target.position.set(0, RH, 0);
+// Projector downward spot (ceiling projector onto plate)
+var projSpot = new THREE.SpotLight(0x1530b0, P.ceilGlow*2.0, RH, Math.PI*0.18, 0.6, 1.0);
+projSpot.position.set(PJX, PROJ_BODY_Y, PJZ);
+projSpot.target.position.set(0, PLATE_Y, 0);
 scene.add(projSpot); scene.add(projSpot.target);
 
 // Under-seating warm glow ring
