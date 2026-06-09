@@ -21,6 +21,33 @@
 <body>
 <div id="label">Bedtime Sonic Fables &nbsp;·&nbsp; drag to orbit &nbsp;·&nbsp; scroll to zoom</div>
 <div id="err"></div>
+
+<div id="audio-ui" style="
+  position:fixed; bottom:44px; left:50%; transform:translateX(-50%);
+  display:flex; align-items:center; gap:14px;
+  background:rgba(2,6,20,0.82); backdrop-filter:blur(8px);
+  padding:10px 20px; border-radius:28px;
+  border:1px solid #1a2a44; font:11px/1 'Courier New',monospace;
+  letter-spacing:.12em; z-index:10; white-space:nowrap;
+">
+  <label id="uploadLabel" style="cursor:pointer; color:#6a9adf;">
+    &#8593; UPLOAD AUDIO
+    <input type="file" id="audioFile" accept="audio/*" style="display:none">
+  </label>
+  <span id="audioName" style="color:#3a5a88; max-width:180px; overflow:hidden; text-overflow:ellipsis; display:none;"></span>
+  <button id="playBtn" style="
+    display:none; background:none; border:1px solid #2a4a78;
+    color:#6a9adf; padding:4px 14px; border-radius:14px;
+    cursor:pointer; font:11px 'Courier New',monospace; letter-spacing:.1em;
+  ">PLAY</button>
+  <div id="vuMeter" style="display:none; gap:2px; align-items:flex-end; height:14px;">
+    <div id="vu0" style="width:4px;background:#1a3a6a;border-radius:1px;transition:height .05s;"></div>
+    <div id="vu1" style="width:4px;background:#1a3a6a;border-radius:1px;transition:height .05s;"></div>
+    <div id="vu2" style="width:4px;background:#1a3a6a;border-radius:1px;transition:height .05s;"></div>
+    <div id="vu3" style="width:4px;background:#1a3a6a;border-radius:1px;transition:height .05s;"></div>
+    <div id="vu4" style="width:4px;background:#1a3a6a;border-radius:1px;transition:height .05s;"></div>
+  </div>
+</div>
 <script>
 window.onerror = function(m,s,l,c,e){
   var d=document.getElementById('err');
@@ -86,11 +113,16 @@ var uComp  = { value: P.complexity };
 var uC1    = { value: new THREE.Color(P.colorDark) };
 var uC2    = { value: new THREE.Color(P.colorBright) };
 var uC3    = { value: new THREE.Color(P.colorAccent) };
+var uBass  = { value: 0.0 };
+var uMid   = { value: 0.0 };
+var uHigh  = { value: 0.0 };
+var uLevel = { value: 0.0 };
 
 function mkU(bri, isW) {
   return {
     time:uTime, frequency:uFreq, speed:uSpeed, complexity:uComp,
     color1:uC1, color2:uC2, color3:uC3,
+    audioBass:uBass, audioMid:uMid, audioHigh:uHigh, audioLevel:uLevel,
     brightness:{ value:bri }, isWater:{ value:isW }
   };
 }
@@ -104,8 +136,8 @@ var FRAG = [
 'uniform float time,frequency,speed,complexity;',
 'uniform vec3 color1,color2,color3;',
 'uniform float brightness,isWater;',
+'uniform float audioBass,audioMid,audioHigh,audioLevel;',
 
-// Smooth noise for organic variation
 'float h21(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+74.3);return fract(p.x*p.y);}',
 'float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.0-2.0*f);',
 '  return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x),f.y);}',
@@ -114,27 +146,29 @@ var FRAG = [
 
 'float cymatics(vec2 p){',
 '  float r=length(p); float a=atan(p.y,p.x);',
-'  float t=time*speed; float f=frequency; float v=0.0;',
-// Slowly drifting sources — creates organic, non-mechanical feel
+'  float t=time*speed;',
+// Bass drives frequency — pattern expands/contracts on beats
+'  float f=frequency*(1.0+audioBass*2.2);',
+// Overall level drives amplitude
+'  float amp=1.0+audioLevel*0.9;',
+'  float v=0.0;',
 '  vec2 d1=vec2(0.18*cos(t*0.07+1.1), 0.14*sin(t*0.09+0.5));',
 '  vec2 d2=vec2(-0.22*sin(t*0.06+2.3), 0.20*cos(t*0.08+1.8));',
 '  vec2 d3=vec2(0.15*cos(t*0.11+0.7), -0.24*sin(t*0.07+3.1));',
 '  vec2 d4=vec2(-0.18*sin(t*0.09+1.5), -0.16*cos(t*0.10+0.3));',
-'  v+=wv(p,d1,f,t)*0.28;',
-'  v+=wv(p,d2,f*0.88,t*1.1)*0.24;',
-'  v+=wv(p,d3,f*1.12,t*0.93)*0.22;',
-'  v+=wv(p,d4,f*0.95,t*1.07)*0.18;',
-// Fixed structural sources
+'  v+=wv(p,d1,f,t)*0.28*amp;',
+'  v+=wv(p,d2,f*0.88,t*1.1)*0.24*amp;',
+'  v+=wv(p,d3,f*1.12,t*0.93)*0.22*amp;',
+'  v+=wv(p,d4,f*0.95,t*1.07)*0.18*amp;',
 '  v+=wv(p,vec2(0.38,0.22),f*0.82,t)*0.14;',
 '  v+=wv(p,vec2(-0.32,-0.28),f*1.0,t*0.9)*0.13;',
 '  v+=wv(p,vec2(0.08,-0.42),f*0.93,t*1.05)*0.12;',
-// Radial (subtle)
 '  v+=sin(f*r*6.28318-t*0.8)*0.10;',
-// Angular mode
-'  if(complexity>=2.0){float n=max(3.0,floor(f*1.4+0.5));v+=cos(n*a+t*0.15)*sin(f*r*5.5)*0.12;}',
-'  if(complexity>=3.0){float m=max(5.0,floor(f*2.1+0.5));v+=cos(m*a-t*0.09)*sin(f*r*4.2)*0.09;}',
-// Organic noise overlay
-'  v+=( noise(p*f*2.5+t*0.12) - 0.5 )*0.08;',
+// Mids boost angular complexity
+'  if(complexity>=2.0){float n=max(3.0,floor(f*1.4+0.5));v+=cos(n*a+t*0.15)*sin(f*r*5.5)*(0.12+audioMid*0.18);}',
+'  if(complexity>=3.0){float m=max(5.0,floor(f*2.1+0.5));v+=cos(m*a-t*0.09)*sin(f*r*4.2)*(0.09+audioMid*0.12);}',
+// Highs add noise sparkle
+'  v+=(noise(p*f*2.5+t*0.12)-0.5)*(0.08+audioHigh*0.18);',
 '  return v;',
 '}',
 
@@ -145,15 +179,15 @@ var FRAG = [
 '  if(fd<0.001) discard;',
 '  float v=cymatics(uv);',
 '  float n=v*0.5+0.5;',
-// Soft crests — more like water reflections, less like hard lines
-'  float cr=pow(max(0.0,sin(v*10.0)),7.0)*0.5;',
-'  float cr2=pow(max(0.0,sin(v*5.0+0.5)),4.0)*0.3;',
+// Highs boost crest sparkle
+'  float cr=pow(max(0.0,sin(v*10.0)),7.0)*(0.5+audioHigh*1.5);',
+'  float cr2=pow(max(0.0,sin(v*5.0+0.5)),4.0)*(0.3+audioMid*0.6);',
 '  vec3 col=mix(color1,color2,pow(n,0.55));',
 '  col=mix(col,color3*1.4,pow(n,3.5)*0.4);',
 '  col+=color2*(cr+cr2);',
-// Radial vignette toward edges — gives "infinite" ceiling feel
 '  float vig=1.0-pow(r,2.5)*0.4;',
-'  col*=fd*brightness*vig;',
+// Audio level brightens the whole pattern
+'  col*=fd*brightness*vig*(1.0+audioLevel*0.5);',
 '  float alpha=isWater>0.5 ? fd*(0.88+n*0.12) : fd*pow(n,0.38)*0.98;',
 '  gl_FragColor=vec4(col,alpha);',
 '}'
@@ -629,6 +663,72 @@ fP.open();
 // ── ANIMATE ───────────────────────────────────────────────────────────────────
 var clock = new THREE.Clock();
 
+// ── AUDIO ENGINE ─────────────────────────────────────────────────────────────
+var audioCtx = null, analyser = null, freqData = null, audioEl = null;
+var isPlaying = false;
+
+function initAudio(file) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  if (audioEl) { audioEl.pause(); audioEl.src = ''; }
+  audioEl = new Audio();
+  audioEl.src = URL.createObjectURL(file);
+  audioEl.loop = true;
+  audioEl.crossOrigin = 'anonymous';
+
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.82;
+  freqData = new Uint8Array(analyser.frequencyBinCount);
+
+  var src = audioCtx.createMediaElementSource(audioEl);
+  src.connect(analyser);
+  analyser.connect(audioCtx.destination);
+}
+
+function getAudioLevels() {
+  if (!analyser) return { bass:0, mid:0, high:0, level:0 };
+  analyser.getByteFrequencyData(freqData);
+  var bass=0, mid=0, high=0;
+  for (var i=0;  i<8;   i++) bass += freqData[i];
+  for (var i=8;  i<80;  i++) mid  += freqData[i];
+  for (var i=80; i<512; i++) high += freqData[i];
+  bass  = bass  / (8   * 255);
+  mid   = mid   / (72  * 255);
+  high  = high  / (432 * 255);
+  var level = bass*0.55 + mid*0.30 + high*0.15;
+  return { bass:bass, mid:mid, high:high, level:level };
+}
+
+// UI wiring
+document.getElementById('audioFile').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  initAudio(file);
+  var nameEl = document.getElementById('audioName');
+  nameEl.textContent = file.name.replace(/\.[^.]+$/, '');
+  nameEl.style.display = 'inline';
+  var btn = document.getElementById('playBtn');
+  btn.style.display = 'inline-block';
+  btn.textContent = 'PLAY';
+  document.getElementById('vuMeter').style.display = 'flex';
+  isPlaying = false;
+});
+
+document.getElementById('playBtn').addEventListener('click', function() {
+  if (!audioEl) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (isPlaying) {
+    audioEl.pause();
+    this.textContent = 'PLAY';
+    isPlaying = false;
+  } else {
+    audioEl.play();
+    this.textContent = 'PAUSE';
+    isPlaying = true;
+  }
+});
+
 // ── DRAG TO REARRANGE cushions & bean bags ────────────────────────────────────
 renderer.domElement.addEventListener('pointerdown', function(e) {
   _dragMouse.x = (e.clientX/innerWidth)*2 - 1;
@@ -670,10 +770,31 @@ function animate() {
   uTime.value = t;
 
   var pulse = 0.65 + 0.28*Math.sin(t*0.78) + 0.14*Math.sin(t*1.61) + 0.07*Math.sin(t*2.97);
-  ceilLight.intensity   = P.ceilGlow * 4.5 * (0.78 + pulse*0.22);
-  plateGlow.intensity   = 2.2 + pulse*0.65;
-  ringLight.intensity   = 4.5 + pulse*0.65;
-  floorReflBri.value    = P.ceilGlow * 0.12 * (0.7 + pulse*0.3);
+
+  // Audio reactivity
+  var au = getAudioLevels();
+  uBass.value  = au.bass;
+  uMid.value   = au.mid;
+  uHigh.value  = au.high;
+  uLevel.value = au.level;
+
+  // Lights pulse with bass
+  var beatPulse = pulse + au.bass * 1.8;
+  ceilLight.intensity  = P.ceilGlow * 4.5 * (0.78 + beatPulse*0.22);
+  plateGlow.intensity  = 2.2 + beatPulse*0.65;
+  ringLight.intensity  = (4.5 + beatPulse*0.65) * (1.0 + au.bass*0.8);
+  floorReflBri.value   = P.ceilGlow * 0.12 * (0.7 + beatPulse*0.3);
+  ceilBri.value        = P.ceilGlow * 3.8 * (1.0 + au.level * 0.6);
+
+  // VU meter bars
+  if (isPlaying) {
+    var vuIds = ['vu0','vu1','vu2','vu3','vu4'];
+    var vuVals = [au.bass, (au.bass+au.mid)*0.5, au.mid, (au.mid+au.high)*0.5, au.high];
+    for (var vi=0; vi<5; vi++) {
+      var el = document.getElementById(vuIds[vi]);
+      if (el) { el.style.height = Math.max(2, vuVals[vi]*14) + 'px'; el.style.background = '#3a6adf'; }
+    }
+  }
 
   controls.update();
   renderer.render(scene, camera);
