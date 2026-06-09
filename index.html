@@ -204,8 +204,8 @@ baseTrim.position.y = 0.03;
 scene.add(baseTrim);
 
 // ── CYMATICS VESSEL (small, elegant focal object) ─────────────────────────────
-var VR = 0.65;
-var VH = 0.34;
+var VR = 0.325;
+var VH = 0.17;
 
 // Wooden container body — warm dark walnut
 var vWood = new THREE.Mesh(
@@ -216,7 +216,7 @@ vWood.position.y = VH/2;
 scene.add(vWood);
 
 // Barrel bands
-[0.09, 0.20, 0.31].forEach(function(yo) {
+[0.045, 0.10, 0.155].forEach(function(yo) {
   var b = new THREE.Mesh(
     new THREE.TorusGeometry(VR+0.09, 0.012, 8, 80),
     mkMat(0x251508, 0.88)
@@ -402,11 +402,11 @@ projSpot.position.set(0, BEAM_Y, 0);
 projSpot.target.position.set(0, RH, 0);
 scene.add(projSpot); scene.add(projSpot.target);
 
-// Under-mattress warm glow ring (very subtle)
-for (var li=0; li<8; li++) {
-  var la = (li/8)*Math.PI*2;
-  var wl = new THREE.PointLight(0x200a04, 0.60, 2.5);
-  wl.position.set(Math.cos(la)*2.85, 0.04, Math.sin(la)*2.85);
+// Under-seating warm glow ring
+for (var li=0; li<12; li++) {
+  var la = (li/12)*Math.PI*2;
+  var wl = new THREE.PointLight(0x200a04, 0.50, 2.2);
+  wl.position.set(Math.cos(la)*2.2, 0.04, Math.sin(la)*2.2);
   scene.add(wl);
 }
 
@@ -418,66 +418,81 @@ for (var wi=0; wi<6; wi++) {
   scene.add(wgl);
 }
 
-// ── PREMIUM FUTON CLUSTERS (8 around vessel, radius 2.85m) ───────────────────
-function makeFuton(x, z, ry) {
+// ── BEAN BAGS + CUSHIONS ──────────────────────────────────────────────────────
+var bagCols  = [0x1a1828, 0x201418, 0x14201c, 0x1e1c14, 0x181428, 0x201c18];
+var cushCols = [0x2a2038, 0x28201a, 0x1e2830, 0x242018, 0x20283a, 0x302020];
+
+function makeBeanBag(x, z, col) {
   var g = new THREE.Group();
   g.position.set(x, 0, z);
-  g.rotation.y = ry;
   scene.add(g);
 
-  // Woven floor mat
-  var mat = new THREE.Mesh(
-    new THREE.BoxGeometry(2.10, 0.014, 1.10),
-    mkMat(0x181410, 0.98)
+  // Base shadow disc (ground contact)
+  var disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.42, 0.40, 0.04, 24),
+    mkMat(0x0e0c0a, 0.98)
   );
-  mat.position.y = 0.007; g.add(mat);
+  disc.position.y = 0.02; g.add(disc);
 
-  // Futon base (dark linen)
-  var fbase = new THREE.Mesh(
-    new THREE.BoxGeometry(1.96, 0.065, 0.93),
-    mkMat(0x1c1916, 0.98)
+  // Main bean bag body — squashed sphere
+  var body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.40, 20, 14),
+    mkMat(col, 0.96)
   );
-  fbase.position.y = 0.048; g.add(fbase);
+  body.scale.set(1.0, 0.62, 1.0);
+  body.position.y = 0.28; g.add(body);
 
-  // Cotton mattress — stone grey / warm ivory
-  var mColors = [0xbfbab0, 0xc8c4b8, 0xb8b4aa, 0xc4c0b4];
-  var mc = mColors[Math.floor((x+z*100)%4+4)%4];
-  var fmain = new THREE.Mesh(
-    new THREE.BoxGeometry(1.92, 0.095, 0.89),
-    mkMat(mc, 0.97)
+  // Top seam crease (slightly darker flattened cap)
+  var top = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 16, 8),
+    mkMat(Math.max(0, col - 0x080808), 0.97)
   );
-  fmain.position.y = 0.128; g.add(fmain);
-
-  // Linen top layer (slightly lighter)
-  var ftop = new THREE.Mesh(
-    new THREE.BoxGeometry(1.89, 0.018, 0.86),
-    mkMat(0xd2cfc6, 0.98)
-  );
-  ftop.position.y = 0.177; g.add(ftop);
-
-  // Pillow (head end, negative x)
-  var fpil = new THREE.Mesh(
-    new THREE.BoxGeometry(0.58, 0.085, 0.78),
-    mkMat(0xe0dbd2, 0.97)
-  );
-  fpil.position.set(-0.64, 0.210, 0); g.add(fpil);
-
-  // Folded dark throw at foot end
-  var fthrow = new THREE.Mesh(
-    new THREE.BoxGeometry(0.58, 0.055, 0.85),
-    mkMat(0x1e1e26, 0.97)
-  );
-  fthrow.position.set(0.67, 0.200, 0); g.add(fthrow);
-
-  // Under-glow light
-  var ul = new THREE.PointLight(0x220a04, 0.65, 2.2);
-  ul.position.y = 0.01; g.add(ul);
+  top.scale.set(1.0, 0.35, 1.0);
+  top.position.y = 0.50; g.add(top);
 }
 
-var NF = 8, FR = 2.85;
-for (var fi=0; fi<NF; fi++) {
-  var fa = (fi/NF)*Math.PI*2;
-  makeFuton(Math.cos(fa)*FR, Math.sin(fa)*FR, -fa);
+function makeFloorCushion(x, z, ry, col) {
+  var c = new THREE.Mesh(
+    new THREE.BoxGeometry(0.52, 0.09, 0.52),
+    mkMat(col, 0.97)
+  );
+  c.position.set(x, 0.045, z);
+  c.rotation.y = ry;
+  scene.add(c);
+}
+
+// Inner ring — 12 bean bags at radius 2.0m
+var NB = 12, BR = 2.0;
+for (var bi=0; bi<NB; bi++) {
+  var ba = (bi/NB)*Math.PI*2;
+  makeBeanBag(
+    Math.cos(ba)*BR,
+    Math.sin(ba)*BR,
+    bagCols[bi % bagCols.length]
+  );
+}
+
+// Outer ring — 10 more bean bags at radius 3.5m
+var NB2 = 10, BR2 = 3.5;
+for (var bi2=0; bi2<NB2; bi2++) {
+  var ba2 = (bi2/NB2)*Math.PI*2 + Math.PI/NB2;
+  makeBeanBag(
+    Math.cos(ba2)*BR2,
+    Math.sin(ba2)*BR2,
+    bagCols[(bi2+2) % bagCols.length]
+  );
+}
+
+// Loose cushions scattered between inner and outer rings
+var NC = 16;
+for (var ci=0; ci<NC; ci++) {
+  var ca = (ci/NC)*Math.PI*2 + 0.18;
+  var cr = 2.75 + (ci%3===0 ? 0.4 : ci%3===1 ? -0.3 : 0.1);
+  makeFloorCushion(
+    Math.cos(ca)*cr, Math.sin(ca)*cr,
+    ca + ci*0.4,
+    cushCols[ci % cushCols.length]
+  );
 }
 
 
