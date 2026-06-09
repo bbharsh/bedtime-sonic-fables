@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bedtime Sonic Fables — Serendipity Arts Festival</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#000; overflow:hidden; }
+  #label {
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    color:#2a3858; font:10px/1 'Courier New',monospace;
+    letter-spacing:.18em; text-transform:uppercase; pointer-events:none;
+  }
+  #err {
+    display:none; position:fixed; inset:0; background:#0a0000;
+    color:#f88; font:13px/1.7 monospace; padding:28px;
+    white-space:pre-wrap; overflow:auto; z-index:9999;
+  }
+</style>
+</head>
+<body>
+<div id="label">Bedtime Sonic Fables &nbsp;·&nbsp; drag to orbit &nbsp;·&nbsp; scroll to zoom</div>
+<div id="err"></div>
+<script>
+window.onerror = function(m,s,l,c,e){
+  var d=document.getElementById('err');
+  d.style.display='block';
+  d.textContent='Line '+l+': '+m+'\n\n'+(e?e.stack:'');
+};
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
+<script>
+'use strict';
+
+// ── RENDERER ──────────────────────────────────────────────────────────────────
+var renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ReinhardToneMapping;
+renderer.toneMappingExposure = 1.4;
+document.body.appendChild(renderer.domElement);
+
+// ── SCENE ─────────────────────────────────────────────────────────────────────
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x010310);
+scene.fog = new THREE.FogExp2(0x010310, 0.036);
+
+// ── CAMERA ────────────────────────────────────────────────────────────────────
+var camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.05, 40);
+camera.position.set(3.8, 1.3, 3.8);
+
+var controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 2.0, 0);
+controls.minDistance = 0.4;
+controls.maxDistance = 5.8;
+controls.minPolarAngle = 0.1;
+controls.maxPolarAngle = Math.PI * 0.86;
+controls.update();
+
+// ── LIVE PARAMS ───────────────────────────────────────────────────────────────
+var P = {
+  frequency:   2.8,
+  speed:       0.22,
+  complexity:  3,
+  fogDensity:  0.036,
+  ceilGlow:    1.4,
+  ambient:     0.12,
+  haze:        0.55,
+  colorDark:   '#010614',
+  colorBright: '#7aaeff',
+  colorAccent: '#2840b0',
+};
+
+// ── UNIFORMS ──────────────────────────────────────────────────────────────────
+var uTime  = { value: 0 };
+var uFreq  = { value: P.frequency };
+var uSpeed = { value: P.speed };
+var uComp  = { value: P.complexity };
+var uC1    = { value: new THREE.Color(P.colorDark) };
+var uC2    = { value: new THREE.Color(P.colorBright) };
+var uC3    = { value: new THREE.Color(P.colorAccent) };
+
+function mkU(bri, isW) {
+  return {
+    time:uTime, frequency:uFreq, speed:uSpeed, complexity:uComp,
+    color1:uC1, color2:uC2, color3:uC3,
+    brightness:{ value:bri }, isWater:{ value:isW }
+  };
+}
+
+// ── GLSL ──────────────────────────────────────────────────────────────────────
+var VERT = 'varying vec2 vUv;\nvoid main(){\n  vUv=uv;\n  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);\n}';
+
+var FRAG = [
+'precision highp float;',
+'varying vec2 vUv;',
+'uniform float time,frequency,speed,complexity;',
+'uniform vec3 color1,color2,color3;',
+'uniform float brightness,isWater;',
+
+// Smooth noise for organic variation
+'float h21(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+74.3);return fract(p.x*p.y);}',
+'float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.0-2.0*f);',
+'  return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x),f.y);}',
+
+'float wv(vec2 p,vec2 src,float f,float t){return sin(length(p-src)*f*6.28318-t);}',
+
+'float cymatics(vec2 p){',
+'  float r=length(p); float a=atan(p.y,p.x);',
+'  float t=time*speed; float f=frequency; float v=0.0;',
+// Slowly drifting sources — creates organic, non-mechanical feel
+'  vec2 d1=vec2(0.18*cos(t*0.07+1.1), 0.14*sin(t*0.09+0.5));',
+'  vec2 d2=vec2(-0.22*sin(t*0.06+2.3), 0.20*cos(t*0.08+1.8));',
+'  vec2 d3=vec2(0.15*cos(t*0.11+0.7), -0.24*sin(t*0.07+3.1));',
+'  vec2 d4=vec2(-0.18*sin(t*0.09+1.5), -0.16*cos(t*0.10+0.3));',
+'  v+=wv(p,d1,f,t)*0.28;',
+'  v+=wv(p,d2,f*0.88,t*1.1)*0.24;',
+'  v+=wv(p,d3,f*1.12,t*0.93)*0.22;',
+'  v+=wv(p,d4,f*0.95,t*1.07)*0.18;',
+// Fixed structural sources
+'  v+=wv(p,vec2(0.38,0.22),f*0.82,t)*0.14;',
+'  v+=wv(p,vec2(-0.32,-0.28),f*1.0,t*0.9)*0.13;',
+'  v+=wv(p,vec2(0.08,-0.42),f*0.93,t*1.05)*0.12;',
+// Radial (subtle)
+'  v+=sin(f*r*6.28318-t*0.8)*0.10;',
+// Angular mode
+'  if(complexity>=2.0){float n=max(3.0,floor(f*1.4+0.5));v+=cos(n*a+t*0.15)*sin(f*r*5.5)*0.12;}',
+'  if(complexity>=3.0){float m=max(5.0,floor(f*2.1+0.5));v+=cos(m*a-t*0.09)*sin(f*r*4.2)*0.09;}',
+// Organic noise overlay
+'  v+=( noise(p*f*2.5+t*0.12) - 0.5 )*0.08;',
+'  return v;',
+'}',
+
+'void main(){',
+'  vec2 uv=vUv*2.0-1.0;',
+'  float r=length(uv);',
+'  float fd=1.0-smoothstep(0.88,1.0,r);',
+'  if(fd<0.001) discard;',
+'  float v=cymatics(uv);',
+'  float n=v*0.5+0.5;',
+// Soft crests — more like water reflections, less like hard lines
+'  float cr=pow(max(0.0,sin(v*10.0)),7.0)*0.5;',
+'  float cr2=pow(max(0.0,sin(v*5.0+0.5)),4.0)*0.3;',
+'  vec3 col=mix(color1,color2,pow(n,0.55));',
+'  col=mix(col,color3*1.4,pow(n,3.5)*0.4);',
+'  col+=color2*(cr+cr2);',
+// Radial vignette toward edges — gives "infinite" ceiling feel
+'  float vig=1.0-pow(r,2.5)*0.4;',
+'  col*=fd*brightness*vig;',
+'  float alpha=isWater>0.5 ? fd*(0.88+n*0.12) : fd*pow(n,0.38)*0.98;',
+'  gl_FragColor=vec4(col,alpha);',
+'}'
+].join('\n');
+
+// ── CIRCULAR ROOM ─────────────────────────────────────────────────────────────
+var ROOM_R = 6.0;
+var RH     = 3.85;
+
+function mkMat(col, rough, metal, side) {
+  return new THREE.MeshStandardMaterial({
+    color: col, roughness: rough, metalness: metal||0,
+    side: side || THREE.FrontSide
+  });
+}
+
+// Polished dark concrete floor (slight sheen)
+var floor = new THREE.Mesh(
+  new THREE.CircleGeometry(ROOM_R, 128),
+  mkMat(0x0c0b09, 0.32, 0.10)
+);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+// Ceiling — receives projection
+var ceilBase = new THREE.Mesh(
+  new THREE.CircleGeometry(ROOM_R, 128),
+  mkMat(0x080809, 1.0, 0.0)
+);
+ceilBase.rotation.x = Math.PI/2;
+ceilBase.position.y = RH;
+scene.add(ceilBase);
+
+// Circular acoustic fabric walls (inside face via BackSide)
+var walls = new THREE.Mesh(
+  new THREE.CylinderGeometry(ROOM_R, ROOM_R, RH, 128, 1, true),
+  mkMat(0x101214, 0.99, 0.0, THREE.BackSide)
+);
+walls.position.y = RH/2;
+scene.add(walls);
+
+// Subtle wall base trim
+var baseTrim = new THREE.Mesh(
+  new THREE.CylinderGeometry(ROOM_R - 0.02, ROOM_R - 0.02, 0.06, 128, 1, true),
+  mkMat(0x1a1814, 0.90, 0.0, THREE.BackSide)
+);
+baseTrim.position.y = 0.03;
+scene.add(baseTrim);
+
+// ── CYMATICS VESSEL (small, elegant focal object) ─────────────────────────────
+var VR = 0.65;
+var VH = 0.34;
+
+// Wooden container body — warm dark walnut
+var vWood = new THREE.Mesh(
+  new THREE.CylinderGeometry(VR+0.05, VR+0.10, VH, 80),
+  mkMat(0x3e2610, 0.90)
+);
+vWood.position.y = VH/2;
+scene.add(vWood);
+
+// Barrel bands
+[0.09, 0.20, 0.31].forEach(function(yo) {
+  var b = new THREE.Mesh(
+    new THREE.TorusGeometry(VR+0.09, 0.012, 8, 80),
+    mkMat(0x251508, 0.88)
+  );
+  b.rotation.x = Math.PI/2; b.position.y = yo; scene.add(b);
+});
+
+// Metal rim at top
+var vRim = new THREE.Mesh(
+  new THREE.TorusGeometry(VR+0.05, 0.020, 8, 80),
+  mkMat(0x1c1c1c, 0.20, 0.92)
+);
+vRim.rotation.x = Math.PI/2; vRim.position.y = VH+0.003; scene.add(vRim);
+
+// Metal plate (where patterns form)
+var vPlate = new THREE.Mesh(
+  new THREE.CylinderGeometry(VR, VR, 0.018, 80),
+  mkMat(0x242428, 0.15, 0.90)
+);
+vPlate.position.y = VH+0.009; scene.add(vPlate);
+
+// Cymatic pattern on plate
+var PLATE_Y = VH+0.020;
+var waterMat = new THREE.ShaderMaterial({
+  uniforms: mkU(1.6, 1.0),
+  vertexShader:VERT, fragmentShader:FRAG,
+  transparent:true, depthWrite:false, side:THREE.DoubleSide,
+});
+var waterMesh = new THREE.Mesh(new THREE.CircleGeometry(VR-0.01, 128), waterMat);
+waterMesh.rotation.x = -Math.PI/2;
+waterMesh.position.y = PLATE_Y;
+scene.add(waterMesh);
+
+// Subtle floor reflection of cymatics pattern
+var floorReflBri = { value: 0.18 };
+var floorReflUni = mkU(0.18, 0.0);
+floorReflUni.brightness = floorReflBri;
+var floorReflMat = new THREE.ShaderMaterial({
+  uniforms: floorReflUni,
+  vertexShader:VERT, fragmentShader:FRAG,
+  transparent:true, depthWrite:false,
+  blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
+});
+var floorRefl = new THREE.Mesh(new THREE.CircleGeometry(ROOM_R*0.75, 128), floorReflMat);
+floorRefl.rotation.x = -Math.PI/2;
+floorRefl.position.y = 0.002;
+scene.add(floorRefl);
+
+// ── CEILING PROJECTION (full room width, dreamlike) ───────────────────────────
+var ceilBri = { value: P.ceilGlow * 3.8 };
+var ceilUni = mkU(P.ceilGlow*3.8, 0.0);
+ceilUni.brightness = ceilBri;
+var ceilMat = new THREE.ShaderMaterial({
+  uniforms: ceilUni,
+  vertexShader:VERT, fragmentShader:FRAG,
+  transparent:true, depthWrite:false,
+  blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
+});
+var ceilProj = new THREE.Mesh(new THREE.CircleGeometry(ROOM_R-0.15, 128), ceilMat);
+ceilProj.rotation.x = Math.PI/2;
+ceilProj.position.y = RH-0.005;
+scene.add(ceilProj);
+
+// ── CAMERA / PROJECTOR RIG ────────────────────────────────────────────────────
+var RING_Y = PLATE_Y + 0.52;
+var CAM_Y  = PLATE_Y + 0.90;
+var PROJ_Y = CAM_Y + 0.20;
+var BEAM_Y = PROJ_Y + 0.11;
+
+var rigMat  = mkMat(0x0d0d0d, 0.28, 0.78);
+var lensMat = mkMat(0x050508, 0.04, 0.96);
+
+// Pedestal
+var pedH = PROJ_Y + 0.10 - PLATE_Y;
+var ped = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.032, pedH, 12), rigMat);
+ped.position.y = PLATE_Y + pedH/2; scene.add(ped);
+
+var pedFoot = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.012, 24), rigMat);
+pedFoot.position.y = PLATE_Y+0.006; scene.add(pedFoot);
+
+// Ring of light
+var RING_R = 0.26;
+var ringGlow = new THREE.Mesh(
+  new THREE.TorusGeometry(RING_R, 0.017, 12, 80),
+  new THREE.MeshBasicMaterial({ color: 0xdcf0ff })
+);
+ringGlow.rotation.x = Math.PI/2; ringGlow.position.y = RING_Y; scene.add(ringGlow);
+
+// Ring inner glow disc
+var ringDisc = new THREE.Mesh(
+  new THREE.CircleGeometry(RING_R*0.85, 64),
+  new THREE.MeshBasicMaterial({ color: 0x0a1840, transparent:true, opacity:0.3, side:THREE.DoubleSide })
+);
+ringDisc.rotation.x = Math.PI/2; ringDisc.position.y = RING_Y+0.001; scene.add(ringDisc);
+
+// Spokes
+for (var si=0; si<3; si++) {
+  var sa = (si/3)*Math.PI*2;
+  var spk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.003, 0.003, RING_R-0.02, 6),
+    rigMat
+  );
+  spk.position.set(Math.cos(sa)*(RING_R*0.5), RING_Y, Math.sin(sa)*(RING_R*0.5));
+  spk.rotation.z = Math.PI/2;
+  spk.rotation.y = sa;
+  scene.add(spk);
+}
+
+// Camera housing (down-facing)
+var camBody = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.08, 0.14), rigMat);
+camBody.position.y = CAM_Y; scene.add(camBody);
+
+var camLens = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, 0.052, 16), lensMat);
+camLens.position.y = CAM_Y-0.060; scene.add(camLens);
+
+var camGlass = new THREE.Mesh(
+  new THREE.CircleGeometry(0.019, 16),
+  new THREE.MeshStandardMaterial({ color:0x102030, metalness:1.0, roughness:0.0 })
+);
+camGlass.rotation.x = -Math.PI/2; camGlass.position.y = CAM_Y-0.084; scene.add(camGlass);
+
+var ledDot = new THREE.Mesh(
+  new THREE.SphereGeometry(0.007, 8, 6),
+  new THREE.MeshBasicMaterial({ color:0xff3300 })
+);
+ledDot.position.set(0.04, CAM_Y+0.042, 0.055); scene.add(ledDot);
+
+// Short cable
+var cable = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.004, 0.004, 0.18, 6),
+  mkMat(0x080808, 0.92)
+);
+cable.position.set(0.05, (CAM_Y+PROJ_Y)*0.5, 0.06);
+cable.rotation.z = 0.28;
+scene.add(cable);
+
+// Projector housing (up-facing)
+var projBody = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.09, 0.21), rigMat);
+projBody.position.y = PROJ_Y; scene.add(projBody);
+
+var projLens = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 0.046, 16), lensMat);
+projLens.position.y = PROJ_Y+0.07; scene.add(projLens);
+
+var projGlow = new THREE.Mesh(
+  new THREE.CircleGeometry(0.024, 16),
+  new THREE.MeshBasicMaterial({ color:0x3060ff })
+);
+projGlow.rotation.x = Math.PI/2; projGlow.position.y = PROJ_Y+0.094; scene.add(projGlow);
+
+// Projection beam
+var beamH = RH - BEAM_Y - 0.03;
+var beamMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(ROOM_R*0.88, 0.028, beamH, 56, 1, true),
+  new THREE.MeshBasicMaterial({ color:0x1020a0, transparent:true, opacity:0.048, depthWrite:false, side:THREE.BackSide })
+);
+beamMesh.position.y = BEAM_Y + beamH/2;
+scene.add(beamMesh);
+
+// ── LIGHTS ────────────────────────────────────────────────────────────────────
+
+// Ambient — very low, room lit primarily by projection
+var ambLight = new THREE.AmbientLight(0x0c1830, P.ambient * 10);
+scene.add(ambLight);
+
+// Ceiling projection fill (primary room light — bounced from ceiling)
+var ceilLight = new THREE.PointLight(0x2858c8, P.ceilGlow * 4.5, 14);
+ceilLight.position.set(0, RH-0.15, 0);
+scene.add(ceilLight);
+
+// Plate/vessel glow
+var plateGlow = new THREE.PointLight(0x1838a0, 2.8, 4.0);
+plateGlow.position.set(0, VH*0.4, 0);
+scene.add(plateGlow);
+
+// Ring of light fill
+var ringLight = new THREE.PointLight(0xc0dcff, 5.0, 4.2);
+ringLight.position.set(0, RING_Y, 0);
+scene.add(ringLight);
+
+// Projector upward cone
+var projSpot = new THREE.SpotLight(0x1530b0, P.ceilGlow*2.0, RH+1, Math.PI*0.46, 0.92, 0.9);
+projSpot.position.set(0, BEAM_Y, 0);
+projSpot.target.position.set(0, RH, 0);
+scene.add(projSpot); scene.add(projSpot.target);
+
+// Under-mattress warm glow ring (very subtle)
+for (var li=0; li<8; li++) {
+  var la = (li/8)*Math.PI*2;
+  var wl = new THREE.PointLight(0x200a04, 0.60, 2.5);
+  wl.position.set(Math.cos(la)*2.85, 0.04, Math.sin(la)*2.85);
+  scene.add(wl);
+}
+
+// Soft wall grazing
+for (var wi=0; wi<6; wi++) {
+  var wa = (wi/6)*Math.PI*2;
+  var wgl = new THREE.PointLight(0x0a1424, 0.55, 5.0);
+  wgl.position.set(Math.cos(wa)*(ROOM_R-0.8), 0.6, Math.sin(wa)*(ROOM_R-0.8));
+  scene.add(wgl);
+}
+
+// ── PREMIUM FUTON CLUSTERS (8 around vessel, radius 2.85m) ───────────────────
+function makeFuton(x, z, ry) {
+  var g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.rotation.y = ry;
+  scene.add(g);
+
+  // Woven floor mat
+  var mat = new THREE.Mesh(
+    new THREE.BoxGeometry(2.10, 0.014, 1.10),
+    mkMat(0x181410, 0.98)
+  );
+  mat.position.y = 0.007; g.add(mat);
+
+  // Futon base (dark linen)
+  var fbase = new THREE.Mesh(
+    new THREE.BoxGeometry(1.96, 0.065, 0.93),
+    mkMat(0x1c1916, 0.98)
+  );
+  fbase.position.y = 0.048; g.add(fbase);
+
+  // Cotton mattress — stone grey / warm ivory
+  var mColors = [0xbfbab0, 0xc8c4b8, 0xb8b4aa, 0xc4c0b4];
+  var mc = mColors[Math.floor((x+z*100)%4+4)%4];
+  var fmain = new THREE.Mesh(
+    new THREE.BoxGeometry(1.92, 0.095, 0.89),
+    mkMat(mc, 0.97)
+  );
+  fmain.position.y = 0.128; g.add(fmain);
+
+  // Linen top layer (slightly lighter)
+  var ftop = new THREE.Mesh(
+    new THREE.BoxGeometry(1.89, 0.018, 0.86),
+    mkMat(0xd2cfc6, 0.98)
+  );
+  ftop.position.y = 0.177; g.add(ftop);
+
+  // Pillow (head end, negative x)
+  var fpil = new THREE.Mesh(
+    new THREE.BoxGeometry(0.58, 0.085, 0.78),
+    mkMat(0xe0dbd2, 0.97)
+  );
+  fpil.position.set(-0.64, 0.210, 0); g.add(fpil);
+
+  // Folded dark throw at foot end
+  var fthrow = new THREE.Mesh(
+    new THREE.BoxGeometry(0.58, 0.055, 0.85),
+    mkMat(0x1e1e26, 0.97)
+  );
+  fthrow.position.set(0.67, 0.200, 0); g.add(fthrow);
+
+  // Under-glow light
+  var ul = new THREE.PointLight(0x220a04, 0.65, 2.2);
+  ul.position.y = 0.01; g.add(ul);
+}
+
+var NF = 8, FR = 2.85;
+for (var fi=0; fi<NF; fi++) {
+  var fa = (fi/NF)*Math.PI*2;
+  makeFuton(Math.cos(fa)*FR, Math.sin(fa)*FR, -fa);
+}
+
+
+// ── HAZE LAYERS (volumetric feel) ────────────────────────────────────────────
+var hazeLayers = [];
+[0.65, 1.3, 2.0, 2.65, 3.30].forEach(function(hy, i) {
+  var hm = new THREE.Mesh(
+    new THREE.CircleGeometry(ROOM_R-0.1, 80),
+    new THREE.MeshBasicMaterial({
+      color:0x04091a, transparent:true,
+      opacity: P.haze*0.045*(1-i*0.16),
+      depthWrite:false, side:THREE.DoubleSide,
+    })
+  );
+  hm.rotation.x = Math.PI/2; hm.position.y = hy; scene.add(hm);
+  hazeLayers.push(hm);
+});
+
+// ── DAT.GUI ───────────────────────────────────────────────────────────────────
+var gui = new dat.GUI({ width: 298 });
+
+var fC = gui.addFolder('Cymatics');
+fC.add(P,'frequency',0.5,10,0.05).name('Frequency').onChange(function(v){ uFreq.value=v; });
+fC.add(P,'speed',0,1.5,0.01).name('Speed').onChange(function(v){ uSpeed.value=v; });
+fC.add(P,'complexity',1,4,1).name('Complexity').onChange(function(v){ uComp.value=v; });
+fC.open();
+
+var fL = gui.addFolder('Lighting');
+fL.add(P,'ceilGlow',0.2,5,0.05).name('Ceiling Glow').onChange(function(v){
+  ceilBri.value=v*3.8; ceilLight.intensity=v*4.5; projSpot.intensity=v*2.0;
+});
+fL.add(P,'ambient',0,0.8,0.01).name('Ambient').onChange(function(v){
+  ambLight.intensity=v*10;
+});
+fL.add(P,'haze',0,1,0.01).name('Haze').onChange(function(v){
+  hazeLayers.forEach(function(m,i){ m.material.opacity=v*0.045*(1-i*0.16); });
+});
+fL.open();
+
+var fK = gui.addFolder('Colors');
+fK.addColor(P,'colorDark').name('Deep').onChange(function(v){ uC1.value.set(v); });
+fK.addColor(P,'colorBright').name('Bright').onChange(function(v){ uC2.value.set(v); });
+fK.addColor(P,'colorAccent').name('Accent').onChange(function(v){ uC3.value.set(v); });
+fK.open();
+
+gui.add(P,'fogDensity',0.01,0.15,0.002).name('Fog Density').onChange(function(v){
+  scene.fog.density=v;
+});
+
+function applyPreset(cfg) {
+  Object.assign(P,cfg);
+  uFreq.value=P.frequency; uSpeed.value=P.speed; uComp.value=P.complexity;
+  uC1.value.set(P.colorDark); uC2.value.set(P.colorBright); uC3.value.set(P.colorAccent);
+  scene.fog.density=P.fogDensity; ambLight.intensity=P.ambient*10;
+  ceilBri.value=P.ceilGlow*3.8; ceilLight.intensity=P.ceilGlow*4.5;
+  projSpot.intensity=P.ceilGlow*2.0; floorReflBri.value=P.ceilGlow*0.12;
+  hazeLayers.forEach(function(m,i){ m.material.opacity=P.haze*0.045*(1-i*0.16); });
+  gui.updateDisplay();
+}
+
+var PRESETS = {
+  'Moonlit': {frequency:2.8,speed:0.22,complexity:3,colorDark:'#010614',colorBright:'#7aaeff',colorAccent:'#2840b0',fogDensity:0.036,ambient:0.12,ceilGlow:1.4,haze:0.55},
+  'Aurora':  {frequency:1.8,speed:0.14,complexity:2,colorDark:'#001812',colorBright:'#00e8b0',colorAccent:'#003828',fogDensity:0.048,ambient:0.10,ceilGlow:1.3,haze:0.65},
+  'Ember':   {frequency:4.0,speed:0.40,complexity:4,colorDark:'#160400',colorBright:'#ff8020',colorAccent:'#700800',fogDensity:0.042,ambient:0.14,ceilGlow:1.5,haze:0.45},
+  'Void':    {frequency:5.5,speed:0.65,complexity:4,colorDark:'#040010',colorBright:'#d4b8ff',colorAccent:'#180080',fogDensity:0.065,ambient:0.08,ceilGlow:1.7,haze:0.80},
+};
+
+var fP = gui.addFolder('Presets');
+Object.keys(PRESETS).forEach(function(name){
+  var cfg=PRESETS[name];
+  fP.add({fn:function(){applyPreset(cfg);}}, 'fn').name(name);
+});
+fP.open();
+
+// ── ANIMATE ───────────────────────────────────────────────────────────────────
+var clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  var t = clock.getElapsedTime();
+  uTime.value = t;
+
+  var pulse = 0.65 + 0.28*Math.sin(t*0.78) + 0.14*Math.sin(t*1.61) + 0.07*Math.sin(t*2.97);
+  ceilLight.intensity   = P.ceilGlow * 4.5 * (0.78 + pulse*0.22);
+  plateGlow.intensity   = 2.2 + pulse*0.65;
+  ringLight.intensity   = 4.5 + pulse*0.65;
+  floorReflBri.value    = P.ceilGlow * 0.12 * (0.7 + pulse*0.3);
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// ── RESIZE ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', function() {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
