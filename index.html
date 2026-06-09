@@ -663,6 +663,9 @@ fP.open();
 // ── ANIMATE ───────────────────────────────────────────────────────────────────
 var clock = new THREE.Clock();
 
+// Persistent smoothed audio values — separate from raw analyser output
+var sBass = 0, sMid = 0, sHigh = 0, sLevel = 0;
+
 // ── AUDIO ENGINE ─────────────────────────────────────────────────────────────
 var audioCtx = null, analyser = null, freqData = null, audioEl = null;
 var isPlaying = false, seekDragging = false;
@@ -685,7 +688,7 @@ function initAudio(file) {
 
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
-  analyser.smoothingTimeConstant = 0.85;
+  analyser.smoothingTimeConstant = 0.94;
   freqData = new Uint8Array(analyser.frequencyBinCount);
 
   var src = audioCtx.createMediaElementSource(audioEl);
@@ -798,24 +801,33 @@ function animate() {
 
   // Audio reactivity
   var au = getAudioLevels();
-  uBass.value  = au.bass;
-  uMid.value   = au.mid;
-  uHigh.value  = au.high;
-  uLevel.value = au.level;
 
-  // Bass smoothly modulates frequency (not speed)
-  var targetFreq = P.frequency * (1.0 + au.bass * 3.5);
-  uFreq.value += (targetFreq - uFreq.value) * 0.07;
+  // Two-stage smoothing: first pass (slow), second pass (very slow for frequency)
+  var k1 = 0.018;   // slow envelope — ~3s response
+  sBass  += (au.bass  - sBass)  * k1;
+  sMid   += (au.mid   - sMid)   * k1;
+  sHigh  += (au.high  - sHigh)  * k1;
+  sLevel += (au.level - sLevel) * k1;
 
-  // Lights pulse with bass
-  var beatPulse = pulse + au.bass * 1.8;
+  // Feed smoothed values into shader uniforms
+  uBass.value  = sBass;
+  uMid.value   = sMid;
+  uHigh.value  = sHigh;
+  uLevel.value = sLevel;
+
+  // Frequency drifts very slowly with bass — second lerp pass (k=0.006 ≈ 8s response)
+  var targetFreq = P.frequency * (1.0 + sBass * 3.0);
+  uFreq.value += (targetFreq - uFreq.value) * 0.006;
+
+  // Lights — also use smoothed values so no snapping
+  var beatPulse = pulse + sBass * 1.4;
   ceilLight.intensity  = P.ceilGlow * 4.5 * (0.78 + beatPulse*0.22);
   plateGlow.intensity  = 2.2 + beatPulse*0.65;
-  ringLight.intensity  = (4.5 + beatPulse*0.65) * (1.0 + au.bass*0.8);
+  ringLight.intensity  = (4.5 + beatPulse*0.65) * (1.0 + sBass*0.8);
   floorReflBri.value   = P.ceilGlow * 0.12 * (0.7 + beatPulse*0.3);
-  ceilBri.value        = P.ceilGlow * 3.8 * (1.0 + au.level * 0.5);
+  ceilBri.value        = P.ceilGlow * 3.8 * (1.0 + sLevel * 0.5);
 
-  // VU meter
+  // VU meter shows raw (unsmoothed) for responsiveness
   if (analyser) {
     var vuVals = [au.bass, (au.bass+au.mid)*0.5, au.mid, (au.mid+au.high)*0.5, au.high];
     for (var vi=0; vi<5; vi++) {
