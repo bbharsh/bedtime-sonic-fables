@@ -600,6 +600,7 @@ var gui = new dat.GUI({ width: 298 });
 var fC = gui.addFolder('Cymatics');
 fC.add(P,'frequency',0.5,10,0.05).name('Frequency').onChange(function(v){ uFreq.value=v; });
 fC.add(P,'speed',0,1.5,0.01).name('Speed').onChange(function(v){ uSpeed.value=v; });
+fC.add(P,'complexity',1,4,1).name('Complexity').onChange(function(v){ uComp.value=v; });
 fC.open();
 
 var fL = gui.addFolder('Lighting');
