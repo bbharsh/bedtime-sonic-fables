@@ -31,15 +31,11 @@
   border:1px solid #1a2a44; font:11px/1 'Courier New',monospace;
   letter-spacing:.1em; z-index:10; white-space:nowrap;
 ">
-  <label style="cursor:pointer; color:#5a8adf; user-select:none;">
-    &#8593; UPLOAD AUDIO
-    <input type="file" id="audioFile" accept="audio/*" style="display:none">
-  </label>
-  <button id="playBtn" style="display:none; background:none; border:none; color:#5a8adf; cursor:pointer; font-size:16px; line-height:1; padding:0 2px;">&#9654;</button>
-  <span id="curTime" style="display:none; color:#2a4a78; min-width:38px; text-align:right;">0:00</span>
+  <button id="playBtn" style="background:none; border:none; color:#5a8adf; cursor:pointer; font-size:16px; line-height:1; padding:0 2px;">&#9654;</button>
+  <span id="curTime" style="color:#2a4a78; min-width:38px; text-align:right;">0:00</span>
   <input type="range" id="seekBar" min="0" max="100" value="0" step="1"
-    style="display:none; width:220px; accent-color:#2a5aaf; cursor:pointer; height:3px;">
-  <span id="durTime" style="display:none; color:#2a4a78; min-width:38px;">--:--</span>
+    style="width:220px; accent-color:#2a5aaf; cursor:pointer; height:3px;">
+  <span id="durTime" style="color:#2a4a78; min-width:38px;">--:--</span>
   <span style="border-left:1px solid #1a2a44; margin-left:4px; padding-left:12px; display:flex; gap:8px; align-items:center;">
     <button id="addCushionBtn" style="background:none; border:1px solid #1a3a5a; color:#5a8adf; padding:3px 10px; border-radius:12px; cursor:pointer; font:10px 'Courier New',monospace; letter-spacing:.1em;">+ CUSHION</button>
     <button id="deleteModeBtn" style="background:none; border:1px solid #1a3a5a; color:#5a8adf; padding:3px 10px; border-radius:12px; cursor:pointer; font:10px 'Courier New',monospace; letter-spacing:.1em;">✕ DELETE</button>
@@ -660,23 +656,13 @@ function formatTime(s) {
   return m+':'+(sec<10?'0':'')+sec;
 }
 
-function initAudio(file) {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+var audioNodeConnected = false;
 
+function loadAudio(url) {
   if (audioEl) { audioEl.pause(); audioEl.src = ''; }
   audioEl = new Audio();
-  audioEl.src = URL.createObjectURL(file);
+  audioEl.src = url;
   audioEl.loop = true;
-
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 2048;
-  analyser.smoothingTimeConstant = 0.94;
-  freqData = new Uint8Array(analyser.frequencyBinCount);
-
-  var src = audioCtx.createMediaElementSource(audioEl);
-  src.connect(analyser);
-  analyser.connect(audioCtx.destination);
 
   audioEl.addEventListener('loadedmetadata', function() {
     var sb = document.getElementById('seekBar');
@@ -689,10 +675,27 @@ function initAudio(file) {
     document.getElementById('seekBar').value = Math.floor(audioEl.currentTime);
     document.getElementById('curTime').textContent = formatTime(audioEl.currentTime);
   });
+}
+
+function connectAndPlay() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  if (!audioNodeConnected) {
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.94;
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+    var asrc = audioCtx.createMediaElementSource(audioEl);
+    asrc.connect(analyser);
+    analyser.connect(audioCtx.destination);
+    audioNodeConnected = true;
+  }
 
   audioEl.play();
   isPlaying = true;
   document.getElementById('playBtn').innerHTML = '&#9646;&#9646;';
+  document.getElementById('vuMeter').style.display = 'flex';
 }
 
 function getAudioLevels() {
@@ -706,21 +709,10 @@ function getAudioLevels() {
   return { bass:bass, mid:mid, high:high, level:bass*0.55+mid*0.30+high*0.15 };
 }
 
-// Upload
-document.getElementById('audioFile').addEventListener('change', function(e) {
-  var file = e.target.files[0]; if (!file) return;
-  initAudio(file);
-  ['playBtn','curTime','seekBar','durTime','vuMeter'].forEach(function(id) {
-    var el = document.getElementById(id);
-    el.style.display = (id === 'vuMeter') ? 'flex' : 'inline-block';
-  });
-  document.getElementById('curTime').style.display = 'inline';
-  document.getElementById('durTime').style.display = 'inline';
-});
-
 // Play / pause
 document.getElementById('playBtn').addEventListener('click', function() {
   if (!audioEl) return;
+  if (!audioCtx || !audioNodeConnected) { connectAndPlay(); return; }
   if (audioCtx.state === 'suspended') audioCtx.resume();
   if (isPlaying) {
     audioEl.pause(); this.innerHTML = '&#9654;'; isPlaying = false;
@@ -866,6 +858,9 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+
+// Auto-load bundled track
+loadAudio('A Velvet Frequency.m4a');
 
 // ── RESIZE ────────────────────────────────────────────────────────────────────
 window.addEventListener('resize', function() {
