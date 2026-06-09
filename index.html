@@ -298,81 +298,76 @@ ceilProj.rotation.x = Math.PI/2;
 ceilProj.position.y = RH-0.005;
 scene.add(ceilProj);
 
-// ── RING OF LIGHT around vessel ───────────────────────────────────────────────
+// ── RING OF LIGHT with camera at centre ───────────────────────────────────────
 var PLATE_Y = VH + 0.020;
 var RING_R  = 0.22;
-var RING_Y  = PLATE_Y + 0.06;
+var RING_Y  = PLATE_Y + 0.42;   // raised above plate
 
 var rigMat  = mkMat(0x0d0d0d, 0.28, 0.78);
 var lensMat = mkMat(0x050508, 0.04, 0.96);
+var yUp     = new THREE.Vector3(0, 1, 0);
 
+// Slim pedestal from plate centre up to ring
+var pedH = RING_Y - PLATE_Y;
+var ringPed = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.009, 0.015, pedH, 10), rigMat
+);
+ringPed.position.y = PLATE_Y + pedH/2;
+scene.add(ringPed);
+
+// Foot disc on plate
+var ringFoot = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.012, 24), rigMat);
+ringFoot.position.y = PLATE_Y + 0.006;
+scene.add(ringFoot);
+
+// The ring of light
 var ringGlow = new THREE.Mesh(
-  new THREE.TorusGeometry(RING_R, 0.014, 12, 80),
+  new THREE.TorusGeometry(RING_R, 0.016, 14, 90),
   new THREE.MeshBasicMaterial({ color: 0xdcf0ff })
 );
-ringGlow.rotation.x = Math.PI/2; ringGlow.position.y = RING_Y; scene.add(ringGlow);
+ringGlow.rotation.x = Math.PI/2;
+ringGlow.position.y = RING_Y;
+scene.add(ringGlow);
 
-// ── CAMERA TRIPOD (beside vessel, pointing down at plate) ─────────────────────
-var TPX = 0.80, TPZ = 0.30;   // tripod base position
-var TRIPOD_H = 1.28;           // camera head height
-
-// Centre pole
-var tpole = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.009, 0.011, TRIPOD_H, 8), rigMat
-);
-tpole.position.set(TPX, TRIPOD_H/2, TPZ);
-scene.add(tpole);
-
-// Three legs spreading outward-downward
-var yUp = new THREE.Vector3(0, 1, 0);
-for (var tli=0; tli<3; tli++) {
-  var tla = (tli/3)*Math.PI*2 + Math.PI/6;
-  var footX = TPX + Math.cos(tla)*0.38;
-  var footZ = TPZ + Math.sin(tla)*0.38;
-  var jointH = 0.18;
-  var legVec = new THREE.Vector3(footX-TPX, -jointH, footZ-TPZ);
-  var legLen = legVec.length();
-  legVec.normalize();
-  var legQ = new THREE.Quaternion().setFromUnitVectors(yUp, legVec);
-  var leg = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.006, 0.007, legLen, 8), rigMat
+// Three support spokes from pedestal to ring
+for (var si=0; si<3; si++) {
+  var sa  = (si/3)*Math.PI*2;
+  var spk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.003, 0.003, RING_R-0.01, 6), rigMat
   );
-  leg.position.set(TPX+(footX-TPX)*0.5, jointH*0.5, TPZ+(footZ-TPZ)*0.5);
-  leg.setRotationFromQuaternion(legQ);
-  scene.add(leg);
-
-  // Rubber foot
-  var foot = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.018, 8), mkMat(0x080808, 0.95));
-  foot.position.set(footX, 0.009, footZ);
-  scene.add(foot);
+  spk.position.set(Math.cos(sa)*(RING_R*0.5), RING_Y, Math.sin(sa)*(RING_R*0.5));
+  spk.rotation.z = Math.PI/2;
+  spk.rotation.y = sa;
+  scene.add(spk);
 }
 
-// Pan-tilt head
-var panHead = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 0.07), rigMat);
-panHead.position.set(TPX, TRIPOD_H+0.025, TPZ);
-scene.add(panHead);
-
-// Camera body on head, tilted toward vessel
-var camBody = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.13), rigMat);
-camBody.position.set(TPX, TRIPOD_H+0.075, TPZ);
-// Tilt camera down toward vessel center
-var tiltAngle = Math.atan2(TRIPOD_H, Math.sqrt(TPX*TPX+TPZ*TPZ));
-camBody.rotation.z = tiltAngle * 0.65;
-camBody.rotation.y = -Math.atan2(TPZ, TPX) + Math.PI;
+// Camera body at centre of ring, pointing straight down
+var camBody = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.12), rigMat);
+camBody.position.set(0, RING_Y, 0);
 scene.add(camBody);
 
-// Camera lens barrel
-var camLens = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.025, 0.048, 16), lensMat);
-camLens.position.set(TPX - 0.055, TRIPOD_H+0.060, TPZ);
-camLens.rotation.z = Math.PI/2;
+// Camera lens (pointing down)
+var camLens = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.020, 0.025, 0.044, 16), lensMat
+);
+camLens.position.set(0, RING_Y - 0.055, 0);
 scene.add(camLens);
 
-// Red LED indicator
+// Lens glass
+var camGlass = new THREE.Mesh(
+  new THREE.CircleGeometry(0.017, 16),
+  new THREE.MeshStandardMaterial({ color:0x102030, metalness:1.0, roughness:0.0 })
+);
+camGlass.rotation.x = -Math.PI/2;
+camGlass.position.set(0, RING_Y - 0.076, 0);
+scene.add(camGlass);
+
+// Red LED
 var ledDot = new THREE.Mesh(
   new THREE.SphereGeometry(0.007, 8, 6),
   new THREE.MeshBasicMaterial({ color:0xff3300 })
 );
-ledDot.position.set(TPX+0.03, TRIPOD_H+0.110, TPZ+0.05);
+ledDot.position.set(0.035, RING_Y + 0.038, 0.045);
 scene.add(ledDot);
 
 // ── CEILING-SUSPENDED PROJECTOR ───────────────────────────────────────────────
