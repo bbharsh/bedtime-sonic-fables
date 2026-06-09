@@ -406,16 +406,12 @@ projGlow.rotation.x = Math.PI/2;
 projGlow.position.set(PJX, PROJ_BODY_Y - 0.098, PJZ);
 scene.add(projGlow);
 
-// Cable from camera up to projector
-var cableLen = Math.sqrt(Math.pow(TPX-PJX,2)+Math.pow(TRIPOD_H-PROJ_BODY_Y,2)+Math.pow(TPZ-PJZ,2));
+// Vertical cable from camera up to projector (both centred at x=0, z=0)
+var cableLen = PROJ_BODY_Y - RING_Y - 0.04;
 var cableMesh = new THREE.Mesh(
   new THREE.CylinderGeometry(0.004, 0.004, cableLen, 6), mkMat(0x080808, 0.92)
 );
-var cableMid = new THREE.Vector3((TPX+PJX)/2, (TRIPOD_H+PROJ_BODY_Y)/2, (TPZ+PJZ)/2);
-var cableDir = new THREE.Vector3(PJX-TPX, PROJ_BODY_Y-TRIPOD_H, PJZ-TPZ).normalize();
-var cableQ   = new THREE.Quaternion().setFromUnitVectors(yUp, cableDir);
-cableMesh.position.copy(cableMid);
-cableMesh.setRotationFromQuaternion(cableQ);
+cableMesh.position.set(0, RING_Y + 0.04 + cableLen/2, 0);
 scene.add(cableMesh);
 
 // Projection beam (from projector lens downward to plate — subtle cone)
