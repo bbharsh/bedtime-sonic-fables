@@ -22,31 +22,27 @@
 <div id="label">Bedtime Sonic Fables &nbsp;·&nbsp; drag to orbit &nbsp;·&nbsp; scroll to zoom</div>
 <div id="err"></div>
 
-<div id="audio-ui" style="
-  position:fixed; bottom:44px; left:50%; transform:translateX(-50%);
-  display:flex; align-items:center; gap:14px;
-  background:rgba(2,6,20,0.82); backdrop-filter:blur(8px);
-  padding:10px 20px; border-radius:28px;
-  border:1px solid #1a2a44; font:11px/1 'Courier New',monospace;
-  letter-spacing:.12em; z-index:10; white-space:nowrap;
+<!-- Click-to-start screen (browsers require user gesture for AudioContext) -->
+<div id="startScreen" style="
+  position:fixed; inset:0; background:#000012;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  z-index:200; cursor:pointer;
 ">
-  <label id="uploadLabel" style="cursor:pointer; color:#6a9adf;">
-    &#8593; UPLOAD AUDIO
-    <input type="file" id="audioFile" accept="audio/*" style="display:none">
-  </label>
-  <span id="audioName" style="color:#3a5a88; max-width:180px; overflow:hidden; text-overflow:ellipsis; display:none;"></span>
-  <button id="playBtn" style="
-    display:none; background:none; border:1px solid #2a4a78;
-    color:#6a9adf; padding:4px 14px; border-radius:14px;
-    cursor:pointer; font:11px 'Courier New',monospace; letter-spacing:.1em;
-  ">PLAY</button>
-  <div id="vuMeter" style="display:none; gap:2px; align-items:flex-end; height:14px;">
-    <div id="vu0" style="width:4px;background:#1a3a6a;border-radius:1px;transition:height .05s;"></div>
-    <div id="vu1" style="width:4px;background:#1a3a6a;border-radius:1px;transition:height .05s;"></div>
-    <div id="vu2" style="width:4px;background:#1a3a6a;border-radius:1px;transition:height .05s;"></div>
-    <div id="vu3" style="width:4px;background:#1a3a6a;border-radius:1px;transition:height .05s;"></div>
-    <div id="vu4" style="width:4px;background:#1a3a6a;border-radius:1px;transition:height .05s;"></div>
-  </div>
+  <div style="color:#2a4878; font:10px/1 'Courier New',monospace; letter-spacing:.25em; text-transform:uppercase;">Bedtime Sonic Fables</div>
+  <div style="color:#1a2a48; font:9px/1 'Courier New',monospace; letter-spacing:.2em; margin-top:18px; text-transform:uppercase;">touch anywhere to begin</div>
+</div>
+
+<!-- Minimal VU meter -->
+<div id="vuMeter" style="
+  position:fixed; bottom:44px; left:50%; transform:translateX(-50%);
+  display:flex; gap:3px; align-items:flex-end; height:16px;
+  opacity:0.6; pointer-events:none;
+">
+  <div id="vu0" style="width:4px;height:2px;background:#1a3a6a;border-radius:1px;"></div>
+  <div id="vu1" style="width:4px;height:2px;background:#1a3a6a;border-radius:1px;"></div>
+  <div id="vu2" style="width:4px;height:2px;background:#1a3a6a;border-radius:1px;"></div>
+  <div id="vu3" style="width:4px;height:2px;background:#1a3a6a;border-radius:1px;"></div>
+  <div id="vu4" style="width:4px;height:2px;background:#1a3a6a;border-radius:1px;"></div>
 </div>
 <script>
 window.onerror = function(m,s,l,c,e){
@@ -147,8 +143,8 @@ var FRAG = [
 'float cymatics(vec2 p){',
 '  float r=length(p); float a=atan(p.y,p.x);',
 '  float t=time*speed;',
-// Bass drives frequency — pattern expands/contracts on beats
-'  float f=frequency*(1.0+audioBass*2.2);',
+// frequency uniform is already modulated by bass from JS (smooth lerp)
+'  float f=frequency;',
 // Overall level drives amplitude
 '  float amp=1.0+audioLevel*0.9;',
 '  float v=0.0;',
@@ -664,26 +660,23 @@ fP.open();
 var clock = new THREE.Clock();
 
 // ── AUDIO ENGINE ─────────────────────────────────────────────────────────────
-var audioCtx = null, analyser = null, freqData = null, audioEl = null;
-var isPlaying = false;
+var audioCtx = null, analyser = null, freqData = null;
 
-function initAudio(file) {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-  if (audioEl) { audioEl.pause(); audioEl.src = ''; }
-  audioEl = new Audio();
-  audioEl.src = URL.createObjectURL(file);
+function startAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  var audioEl = new Audio('./kms_drones.mp3');
   audioEl.loop = true;
   audioEl.crossOrigin = 'anonymous';
 
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
-  analyser.smoothingTimeConstant = 0.82;
+  analyser.smoothingTimeConstant = 0.85;
   freqData = new Uint8Array(analyser.frequencyBinCount);
 
   var src = audioCtx.createMediaElementSource(audioEl);
   src.connect(analyser);
   analyser.connect(audioCtx.destination);
+  audioEl.play();
 }
 
 function getAudioLevels() {
@@ -696,37 +689,16 @@ function getAudioLevels() {
   bass  = bass  / (8   * 255);
   mid   = mid   / (72  * 255);
   high  = high  / (432 * 255);
-  var level = bass*0.55 + mid*0.30 + high*0.15;
-  return { bass:bass, mid:mid, high:high, level:level };
+  return { bass:bass, mid:mid, high:high, level:bass*0.55+mid*0.30+high*0.15 };
 }
 
-// UI wiring
-document.getElementById('audioFile').addEventListener('change', function(e) {
-  var file = e.target.files[0];
-  if (!file) return;
-  initAudio(file);
-  var nameEl = document.getElementById('audioName');
-  nameEl.textContent = file.name.replace(/\.[^.]+$/, '');
-  nameEl.style.display = 'inline';
-  var btn = document.getElementById('playBtn');
-  btn.style.display = 'inline-block';
-  btn.textContent = 'PLAY';
-  document.getElementById('vuMeter').style.display = 'flex';
-  isPlaying = false;
-});
-
-document.getElementById('playBtn').addEventListener('click', function() {
-  if (!audioEl) return;
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  if (isPlaying) {
-    audioEl.pause();
-    this.textContent = 'PLAY';
-    isPlaying = false;
-  } else {
-    audioEl.play();
-    this.textContent = 'PAUSE';
-    isPlaying = true;
-  }
+// Dismiss start screen → launch audio (requires user gesture)
+document.getElementById('startScreen').addEventListener('click', function() {
+  this.style.transition = 'opacity 1.2s';
+  this.style.opacity = '0';
+  var self = this;
+  setTimeout(function(){ self.style.display = 'none'; }, 1300);
+  startAudio();
 });
 
 // ── DRAG TO REARRANGE cushions & bean bags ────────────────────────────────────
@@ -778,21 +750,24 @@ function animate() {
   uHigh.value  = au.high;
   uLevel.value = au.level;
 
+  // Bass smoothly modulates frequency (not speed)
+  var targetFreq = P.frequency * (1.0 + au.bass * 3.5);
+  uFreq.value += (targetFreq - uFreq.value) * 0.07;
+
   // Lights pulse with bass
   var beatPulse = pulse + au.bass * 1.8;
   ceilLight.intensity  = P.ceilGlow * 4.5 * (0.78 + beatPulse*0.22);
   plateGlow.intensity  = 2.2 + beatPulse*0.65;
   ringLight.intensity  = (4.5 + beatPulse*0.65) * (1.0 + au.bass*0.8);
   floorReflBri.value   = P.ceilGlow * 0.12 * (0.7 + beatPulse*0.3);
-  ceilBri.value        = P.ceilGlow * 3.8 * (1.0 + au.level * 0.6);
+  ceilBri.value        = P.ceilGlow * 3.8 * (1.0 + au.level * 0.5);
 
-  // VU meter bars
-  if (isPlaying) {
-    var vuIds = ['vu0','vu1','vu2','vu3','vu4'];
+  // VU meter
+  if (analyser) {
     var vuVals = [au.bass, (au.bass+au.mid)*0.5, au.mid, (au.mid+au.high)*0.5, au.high];
     for (var vi=0; vi<5; vi++) {
-      var el = document.getElementById(vuIds[vi]);
-      if (el) { el.style.height = Math.max(2, vuVals[vi]*14) + 'px'; el.style.background = '#3a6adf'; }
+      var el = document.getElementById('vu'+vi);
+      if (el) { el.style.height = Math.max(2, vuVals[vi]*16)+'px'; el.style.background='#2a5adf'; }
     }
   }
 
