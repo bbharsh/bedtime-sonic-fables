@@ -600,7 +600,6 @@ var gui = new dat.GUI({ width: 298 });
 var fC = gui.addFolder('Cymatics');
 fC.add(P,'frequency',0.5,10,0.05).name('Frequency').onChange(function(v){ uFreq.value=v; });
 fC.add(P,'speed',0,1.5,0.01).name('Speed').onChange(function(v){ uSpeed.value=v; });
-fC.add(P,'complexity',1,4,1).name('Complexity').onChange(function(v){ uComp.value=v; });
 fC.open();
 
 var fL = gui.addFolder('Lighting');
@@ -610,9 +609,6 @@ fL.add(P,'ceilGlow',0.2,5,0.05).name('Ceiling Glow').onChange(function(v){
 fL.add(P,'ambient',0,0.8,0.01).name('Ambient').onChange(function(v){
   ambLight.intensity=v*10;
 });
-fL.add(P,'haze',0,1,0.01).name('Haze').onChange(function(v){
-  hazeLayers.forEach(function(m,i){ m.material.opacity=v*0.045*(1-i*0.16); });
-});
 fL.open();
 
 var fK = gui.addFolder('Colors');
@@ -620,10 +616,6 @@ fK.addColor(P,'colorDark').name('Deep').onChange(function(v){ uC1.value.set(v); 
 fK.addColor(P,'colorBright').name('Bright').onChange(function(v){ uC2.value.set(v); });
 fK.addColor(P,'colorAccent').name('Accent').onChange(function(v){ uC3.value.set(v); });
 fK.open();
-
-gui.add(P,'fogDensity',0.01,0.15,0.002).name('Fog Density').onChange(function(v){
-  scene.fog.density=v;
-});
 
 function applyPreset(cfg) {
   Object.assign(P,cfg);
