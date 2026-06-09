@@ -40,6 +40,10 @@
   <input type="range" id="seekBar" min="0" max="100" value="0" step="1"
     style="display:none; width:220px; accent-color:#2a5aaf; cursor:pointer; height:3px;">
   <span id="durTime" style="display:none; color:#2a4a78; min-width:38px;">--:--</span>
+  <span style="border-left:1px solid #1a2a44; margin-left:4px; padding-left:12px; display:flex; gap:8px; align-items:center;">
+    <button id="addCushionBtn" style="background:none; border:1px solid #1a3a5a; color:#5a8adf; padding:3px 10px; border-radius:12px; cursor:pointer; font:10px 'Courier New',monospace; letter-spacing:.1em;">+ CUSHION</button>
+    <button id="deleteModeBtn" style="background:none; border:1px solid #1a3a5a; color:#5a8adf; padding:3px 10px; border-radius:12px; cursor:pointer; font:10px 'Courier New',monospace; letter-spacing:.1em;">✕ DELETE</button>
+  </span>
   <div id="vuMeter" style="display:none; flex-direction:row; gap:2px; align-items:flex-end; height:14px; margin-left:4px;">
     <div id="vu0" style="width:3px;height:2px;background:#1a3a6a;border-radius:1px;"></div>
     <div id="vu1" style="width:3px;height:2px;background:#1a3a6a;border-radius:1px;"></div>
@@ -302,20 +306,6 @@ waterMesh.rotation.x = -Math.PI/2;
 waterMesh.position.y = PLATE_Y;
 scene.add(waterMesh);
 
-// Subtle floor reflection of cymatics pattern
-var floorReflBri = { value: 0.18 };
-var floorReflUni = mkU(0.18, 0.0);
-floorReflUni.brightness = floorReflBri;
-var floorReflMat = new THREE.ShaderMaterial({
-  uniforms: floorReflUni,
-  vertexShader:VERT, fragmentShader:FRAG,
-  transparent:true, depthWrite:false,
-  blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
-});
-var floorRefl = new THREE.Mesh(new THREE.CircleGeometry(ROOM_R*0.75, 128), floorReflMat);
-floorRefl.rotation.x = -Math.PI/2;
-floorRefl.position.y = 0.002;
-scene.add(floorRefl);
 
 // ── CEILING PROJECTION (full room width, dreamlike) ───────────────────────────
 var ceilBri = { value: P.ceilGlow * 3.8 };
@@ -757,18 +747,62 @@ document.getElementById('seekBar').addEventListener('change', function(){
   seekDragging = false;
 });
 
+// ── ADD / DELETE CUSHIONS ─────────────────────────────────────────────────────
+var cushionIdx = 0;
+var deleteMode = false;
+
+document.getElementById('addCushionBtn').addEventListener('click', function() {
+  var angle  = Math.random() * Math.PI * 2;
+  var radius = 1.4 + Math.random() * 2.4;
+  var x = Math.cos(angle) * radius;
+  var z = Math.sin(angle) * radius;
+  var col = cushCols[cushionIdx++ % cushCols.length];
+  var mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.52, 0.09, 0.52),
+    mkMat(col, 0.97)
+  );
+  mesh.position.set(x, 0.045, z);
+  mesh.rotation.y = Math.random() * Math.PI;
+  mesh.userData.dragRoot = mesh;
+  scene.add(mesh);
+  _dragTargets.push(mesh);
+});
+
+document.getElementById('deleteModeBtn').addEventListener('click', function() {
+  deleteMode = !deleteMode;
+  this.style.color       = deleteMode ? '#ff5544' : '#5a8adf';
+  this.style.borderColor = deleteMode ? '#882233' : '#1a3a5a';
+  this.textContent       = deleteMode ? '✕ DELETING' : '✕ DELETE';
+  // Cursor hint
+  renderer.domElement.style.cursor = deleteMode ? 'crosshair' : 'default';
+});
+
 // ── DRAG TO REARRANGE cushions & bean bags ────────────────────────────────────
 renderer.domElement.addEventListener('pointerdown', function(e) {
   _dragMouse.x = (e.clientX/innerWidth)*2 - 1;
   _dragMouse.y = -(e.clientY/innerHeight)*2 + 1;
   _dragRay.setFromCamera(_dragMouse, camera);
   var hits = _dragRay.intersectObjects(_dragTargets, false);
-  if (hits.length > 0) {
-    _dragRoot = hits[0].object.userData.dragRoot;
-    controls.enabled = false;
-    _dragRay.ray.intersectPlane(_floorPlane, _dragHit);
-    _dragOff.set(_dragHit.x - _dragRoot.position.x, 0, _dragHit.z - _dragRoot.position.z);
+  if (hits.length === 0) return;
+
+  var root = hits[0].object.userData.dragRoot;
+
+  if (deleteMode) {
+    // Remove from scene
+    scene.remove(root);
+    // Remove all _dragTargets entries that belong to this root
+    for (var di = _dragTargets.length - 1; di >= 0; di--) {
+      if (_dragTargets[di] === root || _dragTargets[di].userData.dragRoot === root) {
+        _dragTargets.splice(di, 1);
+      }
+    }
+    return;
   }
+
+  _dragRoot = root;
+  controls.enabled = false;
+  _dragRay.ray.intersectPlane(_floorPlane, _dragHit);
+  _dragOff.set(_dragHit.x - _dragRoot.position.x, 0, _dragHit.z - _dragRoot.position.z);
 });
 
 renderer.domElement.addEventListener('pointermove', function(e) {
@@ -824,7 +858,6 @@ function animate() {
   ceilLight.intensity  = P.ceilGlow * 4.5 * (0.78 + beatPulse*0.22);
   plateGlow.intensity  = 2.2 + beatPulse*0.65;
   ringLight.intensity  = (4.5 + beatPulse*0.65) * (1.0 + sBass*0.8);
-  floorReflBri.value   = P.ceilGlow * 0.12 * (0.7 + beatPulse*0.3);
   ceilBri.value        = P.ceilGlow * 3.8 * (1.0 + sLevel * 0.5);
 
   // VU meter shows raw (unsmoothed) for responsiveness
