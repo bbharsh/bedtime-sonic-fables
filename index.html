@@ -604,6 +604,9 @@ fC.add(P,'complexity',1,4,1).name('Complexity').onChange(function(v){ uComp.valu
 fC.open();
 
 var fL = gui.addFolder('Lighting');
+fL.add(P,'ceilGlow',0,5,0.05).name('Ceiling Glow').onChange(function(v){
+  ceilBri.value=v*3.8; ceilLight.intensity=v*4.5; projSpot.intensity=v*2.0;
+});
 fL.add(P,'ambient',0,0.8,0.01).name('Ambient').onChange(function(v){
   ambLight.intensity=v*10;
 });
