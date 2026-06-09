@@ -631,7 +631,7 @@ function applyPreset(cfg) {
   uC1.value.set(P.colorDark); uC2.value.set(P.colorBright); uC3.value.set(P.colorAccent);
   scene.fog.density=P.fogDensity; ambLight.intensity=P.ambient*10;
   ceilBri.value=P.ceilGlow*3.8; ceilLight.intensity=P.ceilGlow*4.5;
-  projSpot.intensity=P.ceilGlow*2.0; floorReflBri.value=P.ceilGlow*0.12;
+  projSpot.intensity=P.ceilGlow*2.0;
   hazeLayers.forEach(function(m,i){ m.material.opacity=P.haze*0.045*(1-i*0.16); });
   gui.updateDisplay();
 }
